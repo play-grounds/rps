@@ -1,2 +1,4 @@
 node_modules/
 package-lock.json
+.agent-key.json
+.agent-trail.json

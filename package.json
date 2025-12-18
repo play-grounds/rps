@@ -1,12 +1,19 @@
 {
   "name": "rps",
-  "version": "0.0.1",
-  "description": "Rock Paper Scissors on Nostr with commit-reveal",
+  "version": "0.0.4",
+  "description": "Rock Paper Scissors on Nostr with commit-reveal and escrow agent",
   "type": "module",
   "scripts": {
-    "start": "npx serve ."
+    "start": "npx serve .",
+    "agent": "node agent.js",
+    "agent:status": "node agent.js status",
+    "agent:trail": "node agent.js trail",
+    "agent:pay": "node agent.js pay"
   },
   "dependencies": {
-    "nostr-tools": "^2.19.3"
+    "@noble/secp256k1": "^3.0.0",
+    "bitcoinjs-lib": "^7.0.0",
+    "nostr-tools": "^2.19.3",
+    "tiny-secp256k1": "^2.2.4"
   }
 }
