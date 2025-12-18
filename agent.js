@@ -35,7 +35,7 @@ const testnet4 = {
 // ============================================
 
 const CONFIG = {
-  relay: 'wss://relay.damus.io',
+  relay: 'wss://nos.lol',  // More permissive than damus
   trailFile: '.agent-trail.json',
   keyFile: '.agent-key.json',
   network: 'tbtc4',
