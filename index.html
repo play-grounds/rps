@@ -213,7 +213,7 @@
       </div>
 
       <div style="margin-top: 1rem;">
-        <label>Balance</label>
+        <label>Balance <span id="refresh-balance" style="cursor:pointer; opacity:0.6;">[refresh]</span></label>
         <div class="game-id" id="my-balance">Loading...</div>
       </div>
 
@@ -468,6 +468,12 @@
 
       // Faucet button
       $('faucet-btn').addEventListener('click', requestFaucet);
+
+      // Refresh balance button
+      $('refresh-balance').addEventListener('click', () => {
+        $('my-balance').textContent = 'Loading...';
+        updateBalance();
+      });
     }
 
     // Connect to relay
@@ -797,7 +803,7 @@
         result = "It's a draw!";
         statusClass = 'draw';
       } else if (BEATS[myMove] === opponentMove) {
-        result = 'You win!';
+        result = 'You win! +20k sats';
         statusClass = 'win';
       } else {
         result = 'You lose!';
@@ -806,7 +812,7 @@
 
       // Add escrow verification note
       if (useEscrow && agentResolution) {
-        result += ' (Verified by escrow agent)';
+        result += ' (Verified by agent)';
       }
 
       const statusEl = $('result-status');
@@ -815,6 +821,9 @@
 
       showSection('result-section');
       log(`Result: ${myMove} vs ${opponentMove} - ${result}`);
+
+      // Refresh balance after a delay (let tx propagate)
+      setTimeout(updateBalance, 5000);
     }
 
     // Rematch
