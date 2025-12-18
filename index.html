@@ -186,8 +186,9 @@
 
     <!-- Waiting for Opponent -->
     <div class="section hidden" id="waiting-section">
-      <label>Game ID (share with opponent)</label>
-      <div class="game-id" id="game-id-display"></div>
+      <label>Share this link with opponent</label>
+      <div class="game-id" id="game-link-display" style="cursor: pointer;"></div>
+      <button id="copy-btn" style="margin-top: 0.5rem;">Copy Link</button>
       <div class="status waiting" style="margin-top: 1rem;">
         Waiting for opponent to join...
       </div>
@@ -292,6 +293,14 @@
           $('commit-btn').disabled = false;
         });
       });
+
+      // Check for game in URL
+      const params = new URLSearchParams(window.location.search);
+      const urlGame = params.get('game');
+      if (urlGame) {
+        $('join-input').value = urlGame;
+        log(`Game ID from URL: ${urlGame}`);
+      }
     }
 
     // Connect to relay
@@ -385,9 +394,23 @@
       });
 
       subscribe(gameId);
-      $('game-id-display').textContent = gameId;
+
+      // Update URL and show shareable link
+      const shareUrl = `${window.location.origin}${window.location.pathname}?game=${gameId}`;
+      window.history.replaceState({}, '', `?game=${gameId}`);
+      $('game-link-display').textContent = shareUrl;
+
       showSection('waiting-section');
       log(`Created game: ${gameId}`);
+    });
+
+    // Copy link button
+    $('copy-btn').addEventListener('click', () => {
+      const link = $('game-link-display').textContent;
+      navigator.clipboard.writeText(link).then(() => {
+        $('copy-btn').textContent = 'Copied!';
+        setTimeout(() => $('copy-btn').textContent = 'Copy Link', 2000);
+      });
     });
 
     // Join game
