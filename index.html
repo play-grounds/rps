@@ -213,6 +213,11 @@
       </div>
 
       <div style="margin-top: 1rem;">
+        <label>Balance</label>
+        <div class="game-id" id="my-balance">Loading...</div>
+      </div>
+
+      <div style="margin-top: 1rem;">
         <button id="faucet-btn" disabled>Get 50k sats from Faucet</button>
         <div id="faucet-status" style="font-size: 0.875rem; margin-top: 0.5rem; opacity: 0.7;"></div>
       </div>
@@ -384,6 +389,27 @@
       }));
     }
 
+    // Fetch and display BTC balance
+    async function updateBalance() {
+      if (!btcAddress) return;
+      try {
+        const res = await fetch(`https://mempool.space/testnet4/api/address/${btcAddress}/utxo`);
+        const utxos = await res.json();
+        const balance = utxos.reduce((sum, u) => sum + u.value, 0);
+        $('my-balance').textContent = `${balance.toLocaleString()} sats`;
+
+        // Hide faucet if already have balance
+        if (balance > 0) {
+          faucetReceived = true;
+          saveKeys();
+          $('faucet-btn').textContent = 'Faucet Received';
+          $('faucet-btn').disabled = true;
+        }
+      } catch (e) {
+        $('my-balance').textContent = 'Error loading';
+      }
+    }
+
     // Initialize
     async function init() {
       // Load or generate Nostr keypair (persist in localStorage)
@@ -407,11 +433,13 @@
       $('my-pubkey').textContent = pubkey.slice(0, 8) + '...' + pubkey.slice(-4);
       $('my-btc-address').textContent = btcAddress;
 
+      // Fetch balance from chain
+      updateBalance();
+
       // Update faucet button based on state
       if (faucetReceived) {
         $('faucet-btn').textContent = 'Faucet Received';
         $('faucet-btn').disabled = true;
-        $('faucet-status').textContent = 'You already received 50k sats';
       }
 
       // Setup move buttons
@@ -540,10 +568,12 @@
           if (data.success) {
             faucetReceived = true;
             saveKeys(); // Persist faucet received state
-            $('faucet-status').textContent = `Received 50k sats! TX: ${data.txid.slice(0, 12)}...`;
+            $('faucet-status').textContent = `TX: ${data.txid.slice(0, 16)}...`;
             $('faucet-btn').textContent = 'Faucet Received';
             $('faucet-btn').disabled = true;
             log(`Faucet received! TX: ${data.txid}`);
+            // Refresh balance after short delay (let mempool see it)
+            setTimeout(updateBalance, 2000);
           } else {
             $('faucet-status').textContent = `Denied: ${data.reason}`;
             $('faucet-btn').disabled = false;
