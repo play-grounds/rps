@@ -1,0 +1,12 @@
+{
+  "name": "rps",
+  "version": "0.0.1",
+  "description": "Rock Paper Scissors on Nostr with commit-reveal",
+  "type": "module",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "dependencies": {
+    "nostr-tools": "^2.19.3"
+  }
+}
