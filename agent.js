@@ -533,7 +533,7 @@ async function startAgent() {
           tags.push(['p', response.recipient]);
         }
 
-        // Publish response
+        // Publish response (with retry on rate-limit)
         const responseEvent = finalizeEvent({
           kind: 30337,
           created_at: Math.floor(Date.now() / 1000),
@@ -541,8 +541,24 @@ async function startAgent() {
           content: JSON.stringify(response)
         }, secretKey);
 
-        await relay.publish(responseEvent);
-        console.log(`Published: ${response.type}`);
+        try {
+          await relay.publish(responseEvent);
+          console.log(`Published: ${response.type}`);
+        } catch (e) {
+          console.log(`Failed to publish ${response.type}: ${e.message}`);
+          // Retry after delay if rate-limited
+          if (e.message.includes('rate-limit')) {
+            console.log('Rate-limited, retrying in 5s...');
+            setTimeout(async () => {
+              try {
+                await relay.publish(responseEvent);
+                console.log(`Retry published: ${response.type}`);
+              } catch (e2) {
+                console.log(`Retry failed: ${e2.message}`);
+              }
+            }, 5000);
+          }
+        }
 
         // Record completed games and pay winner
         if (response.type === 'game_resolved' && response.winner !== 'draw') {

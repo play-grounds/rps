@@ -373,18 +373,46 @@
       return btcAddress;
     }
 
+    // Save keys to localStorage
+    function saveKeys() {
+      localStorage.setItem('rps-keys', JSON.stringify({
+        secretKey: Array.from(secretKey),
+        pubkey,
+        btcPrivkey: Array.from(btcPrivkey),
+        btcAddress,
+        faucetReceived
+      }));
+    }
+
     // Initialize
     async function init() {
-      // Generate Nostr keypair
-      secretKey = generateSecretKey();
-      pubkey = getPublicKey(secretKey);
-      $('my-pubkey').textContent = pubkey.slice(0, 8) + '...' + pubkey.slice(-4);
-      log('Generated Nostr keypair');
+      // Load or generate Nostr keypair (persist in localStorage)
+      const stored = localStorage.getItem('rps-keys');
+      if (stored) {
+        const keys = JSON.parse(stored);
+        secretKey = new Uint8Array(keys.secretKey);
+        pubkey = keys.pubkey;
+        btcPrivkey = new Uint8Array(keys.btcPrivkey);
+        btcAddress = keys.btcAddress;
+        faucetReceived = keys.faucetReceived || false;
+        log('Loaded existing keys');
+      } else {
+        secretKey = generateSecretKey();
+        pubkey = getPublicKey(secretKey);
+        generateBtcAddress();
+        saveKeys();
+        log('Generated new keys');
+      }
 
-      // Generate BTC address
-      generateBtcAddress();
+      $('my-pubkey').textContent = pubkey.slice(0, 8) + '...' + pubkey.slice(-4);
       $('my-btc-address').textContent = btcAddress;
-      log('Generated BTC address');
+
+      // Update faucet button based on state
+      if (faucetReceived) {
+        $('faucet-btn').textContent = 'Faucet Received';
+        $('faucet-btn').disabled = true;
+        $('faucet-status').textContent = 'You already received 50k sats';
+      }
 
       // Setup move buttons
       document.querySelectorAll('.move-btn').forEach(btn => {
@@ -511,8 +539,10 @@
         if (data.type === 'faucet_response') {
           if (data.success) {
             faucetReceived = true;
+            saveKeys(); // Persist faucet received state
             $('faucet-status').textContent = `Received 50k sats! TX: ${data.txid.slice(0, 12)}...`;
             $('faucet-btn').textContent = 'Faucet Received';
+            $('faucet-btn').disabled = true;
             log(`Faucet received! TX: ${data.txid}`);
           } else {
             $('faucet-status').textContent = `Denied: ${data.reason}`;
