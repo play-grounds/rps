@@ -345,6 +345,23 @@
 
     <!-- Move Selection -->
     <div class="section hidden" id="move-section">
+      <div id="matchup-stats" class="agent-card" style="margin-bottom: 1rem; display: none;">
+        <div style="font-size: 0.75rem; text-transform: uppercase; opacity: 0.6; margin-bottom: 0.5rem;">Head-to-Head vs Opponent</div>
+        <div style="display: flex; justify-content: center; gap: 1.5rem; font-size: 1.5rem;">
+          <div style="text-align: center;">
+            <div style="color: #2d6a4f; font-weight: bold;" id="h2h-wins">0</div>
+            <div style="font-size: 0.6rem; opacity: 0.6;">WINS</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="color: #7b5e00; font-weight: bold;" id="h2h-draws">0</div>
+            <div style="font-size: 0.6rem; opacity: 0.6;">DRAWS</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="color: #9d0208; font-weight: bold;" id="h2h-losses">0</div>
+            <div style="font-size: 0.6rem; opacity: 0.6;">LOSSES</div>
+          </div>
+        </div>
+      </div>
       <label>Choose Your Move</label>
       <div class="moves">
         <button class="move-btn" data-move="rock">🪨</button>
@@ -698,6 +715,18 @@
       });
     }
 
+    // Query head-to-head matchup stats
+    async function queryMatchup(opponentPubkey) {
+      if (!relay) return;
+
+      await publish({
+        kind: 30334,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['t', 'rps-register']],
+        content: JSON.stringify({ type: 'matchup_query', opponent: opponentPubkey })
+      });
+    }
+
     // Update agent balance display
     function updateAgentBalanceDisplay() {
       $('agent-balance').textContent = `${agentBalance.toLocaleString()} sats`;
@@ -790,6 +819,14 @@
             log(`Withdraw failed: ${data.reason}`);
           }
         }
+
+        if (data.type === 'matchup_response') {
+          $('h2h-wins').textContent = data.wins || 0;
+          $('h2h-draws').textContent = data.draws || 0;
+          $('h2h-losses').textContent = data.losses || 0;
+          $('matchup-stats').style.display = 'block';
+          log(`H2H vs ${data.opponent.slice(0, 8)}...: ${data.wins}W-${data.draws}D-${data.losses}L`);
+        }
       } catch (e) {
         // Ignore
       }
@@ -826,6 +863,8 @@
             opponent = event.pubkey;
             log(`Opponent joined: ${opponent.slice(0, 8)}...`);
             showSection('move-section');
+            // Query head-to-head stats
+            queryMatchup(opponent);
           }
         }
 
@@ -1045,6 +1084,8 @@
       $('commit-btn').disabled = true;
       showSection('move-section');
       log('Starting rematch...');
+      // Refresh matchup stats
+      if (opponent) queryMatchup(opponent);
     });
 
     // Start

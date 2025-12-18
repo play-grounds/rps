@@ -296,6 +296,39 @@ function registerPlayer(trail, pubkey, btcAddress) {
   console.log(`Registered player ${pubkey.slice(0, 8)}... with address ${btcAddress.slice(0, 12)}...`);
 }
 
+function recordMatchup(trail, winner, loser, result) {
+  // Initialize matchups for both players if needed
+  if (!trail.players[winner].matchups) trail.players[winner].matchups = {};
+  if (!trail.players[loser].matchups) trail.players[loser].matchups = {};
+
+  // Winner's record vs loser
+  if (!trail.players[winner].matchups[loser]) {
+    trail.players[winner].matchups[loser] = { wins: 0, losses: 0, draws: 0 };
+  }
+  // Loser's record vs winner
+  if (!trail.players[loser].matchups[winner]) {
+    trail.players[loser].matchups[winner] = { wins: 0, losses: 0, draws: 0 };
+  }
+
+  if (result === 'draw') {
+    trail.players[winner].matchups[loser].draws++;
+    trail.players[loser].matchups[winner].draws++;
+  } else {
+    trail.players[winner].matchups[loser].wins++;
+    trail.players[loser].matchups[winner].losses++;
+  }
+
+  saveTrail(trail);
+}
+
+function getMatchupStats(trail, playerA, playerB) {
+  const player = trail.players[playerA];
+  if (!player || !player.matchups || !player.matchups[playerB]) {
+    return { wins: 0, losses: 0, draws: 0 };
+  }
+  return player.matchups[playerB];
+}
+
 async function processFaucetRequest(trail, keyData, pubkey, btcAddress) {
   // Check if already received faucet
   if (trail.faucet.recipients[pubkey]) {
@@ -384,6 +417,17 @@ async function handleGameEvent(event, agentPubkey, trail, keyData) {
         balance: player ? player.balance : 0,
         wins: player ? player.wins : 0,
         losses: player ? player.losses : 0
+      };
+    }
+
+    // Handle matchup query (head-to-head stats vs specific opponent)
+    if (data.type === 'matchup_query' && data.opponent) {
+      const stats = getMatchupStats(trail, event.pubkey, data.opponent);
+      return {
+        type: 'matchup_response',
+        recipient: event.pubkey,
+        opponent: data.opponent,
+        ...stats
       };
     }
 
@@ -609,8 +653,11 @@ async function startAgent() {
           const [playerA, playerB] = players;
 
           if (response.winner === 'draw') {
-            // Draw - no balance changes
+            // Draw - no balance changes, but record the matchup
             console.log('Draw - no balance changes');
+            if (trail.players[playerA] && trail.players[playerB]) {
+              recordMatchup(trail, playerA, playerB, 'draw');
+            }
           } else {
             // Winner takes loser's stake
             const winner = response.winner;
@@ -622,6 +669,10 @@ async function startAgent() {
               trail.players[winner].wins++;
               trail.players[loser].balance -= CONFIG.stakeAmount;
               trail.players[loser].losses++;
+
+              // Record head-to-head matchup
+              recordMatchup(trail, winner, loser, 'win');
+
               saveTrail(trail);
 
               console.log(`${winner.slice(0, 8)}... wins ${CONFIG.stakeAmount} sats from ${loser.slice(0, 8)}...`);
