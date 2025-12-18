@@ -327,7 +327,7 @@
     }
 
     // Handle incoming events
-    function handleEvent(event) {
+    async function handleEvent(event) {
       try {
         const data = JSON.parse(event.content);
 
