@@ -375,6 +375,42 @@ async function handleGameEvent(event, agentPubkey, trail, keyData) {
       };
     }
 
+    // Handle balance query
+    if (data.type === 'balance_query') {
+      const player = trail.players[event.pubkey];
+      return {
+        type: 'balance_response',
+        recipient: event.pubkey,
+        balance: player ? player.balance : 0,
+        wins: player ? player.wins : 0,
+        losses: player ? player.losses : 0
+      };
+    }
+
+    // Handle withdraw request
+    if (data.type === 'withdraw' && data.amount) {
+      const player = trail.players[event.pubkey];
+      if (!player) {
+        return { type: 'withdraw_response', recipient: event.pubkey, success: false, reason: 'not_registered' };
+      }
+      if (player.balance < data.amount) {
+        return { type: 'withdraw_response', recipient: event.pubkey, success: false, reason: 'insufficient_balance', balance: player.balance };
+      }
+      if (data.amount < 1000) {
+        return { type: 'withdraw_response', recipient: event.pubkey, success: false, reason: 'minimum_1000_sats' };
+      }
+
+      try {
+        const txid = await payWinner(keyData, player.btcAddress, data.amount);
+        player.balance -= data.amount;
+        saveTrail(trail);
+        console.log(`Withdraw ${data.amount} sats to ${event.pubkey.slice(0, 8)}...: ${txid}`);
+        return { type: 'withdraw_response', recipient: event.pubkey, success: true, txid, amount: data.amount, newBalance: player.balance };
+      } catch (e) {
+        return { type: 'withdraw_response', recipient: event.pubkey, success: false, reason: e.message };
+      }
+    }
+
     const gameTag = event.tags.find(t => t[0] === 'g');
     const gameId = gameTag ? gameTag[1] : null;
 
@@ -560,29 +596,33 @@ async function startAgent() {
           }
         }
 
-        // Record completed games and pay winner
-        if (response.type === 'game_resolved' && response.winner !== 'draw') {
+        // Record completed games and settle balances
+        if (response.type === 'game_resolved') {
           const game = activeGames.get(response.gameId);
           recordGame(trail, game);
 
-          // Auto-pay winner if they have a registered BTC address
-          const winnerData = trail.players[response.winner];
-          if (winnerData && winnerData.btcAddress) {
-            try {
-              const txid = await payWinner(keyData, winnerData.btcAddress, CONFIG.stakeAmount * 2);
-              console.log(`Paid winner ${response.winner.slice(0, 8)}...: ${txid}`);
+          const players = Object.keys(game.reveals);
+          const [playerA, playerB] = players;
 
-              // Update player stats
-              winnerData.wins++;
-              winnerData.balance += CONFIG.stakeAmount;
-              const loser = Object.keys(game.reveals).find(p => p !== response.winner);
-              if (trail.players[loser]) {
-                trail.players[loser].losses++;
-                trail.players[loser].balance -= CONFIG.stakeAmount;
-              }
+          if (response.winner === 'draw') {
+            // Draw - no balance changes
+            console.log('Draw - no balance changes');
+          } else {
+            // Winner takes loser's stake
+            const winner = response.winner;
+            const loser = players.find(p => p !== winner);
+
+            if (trail.players[winner] && trail.players[loser]) {
+              // Transfer stake from loser to winner
+              trail.players[winner].balance += CONFIG.stakeAmount;
+              trail.players[winner].wins++;
+              trail.players[loser].balance -= CONFIG.stakeAmount;
+              trail.players[loser].losses++;
               saveTrail(trail);
-            } catch (e) {
-              console.log(`Failed to pay winner: ${e.message}`);
+
+              console.log(`${winner.slice(0, 8)}... wins ${CONFIG.stakeAmount} sats from ${loser.slice(0, 8)}...`);
+              console.log(`  Winner balance: ${trail.players[winner].balance} sats`);
+              console.log(`  Loser balance: ${trail.players[loser].balance} sats`);
             }
           }
         }

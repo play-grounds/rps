@@ -213,14 +213,23 @@
       </div>
 
       <div style="margin-top: 1rem;">
-        <label>Balance <span id="refresh-balance" style="cursor:pointer; opacity:0.6;">[refresh]</span></label>
+        <label>On-chain Balance <span id="refresh-balance" style="cursor:pointer; opacity:0.6;">[refresh]</span></label>
         <div class="game-id" id="my-balance">Loading...</div>
       </div>
 
       <div style="margin-top: 1rem;">
-        <button id="faucet-btn" disabled>Get 50k sats from Faucet</button>
-        <div id="faucet-status" style="font-size: 0.875rem; margin-top: 0.5rem; opacity: 0.7;"></div>
+        <label>Agent Balance (for games) <span id="refresh-agent-balance" style="cursor:pointer; opacity:0.6;">[refresh]</span></label>
+        <div class="game-id" id="agent-balance">Connect to see...</div>
+        <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 0.25rem;">
+          <span id="player-stats"></span>
+        </div>
       </div>
+
+      <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+        <button id="faucet-btn" disabled style="flex:1;">Get 50k sats</button>
+        <button id="withdraw-btn" disabled style="flex:1;">Withdraw</button>
+      </div>
+      <div id="faucet-status" style="font-size: 0.875rem; margin-top: 0.5rem; opacity: 0.7;"></div>
 
       <div style="margin-top: 1rem;">
         <label>Relay</label>
@@ -338,6 +347,9 @@
     let btcPrivkey;
     let btcAddress;
     let faucetReceived = false;
+    let agentBalance = 0;
+    let playerWins = 0;
+    let playerLosses = 0;
 
     const MOVES = { rock: '🪨', paper: '📄', scissors: '✂️' };
     const BEATS = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
@@ -469,10 +481,19 @@
       // Faucet button
       $('faucet-btn').addEventListener('click', requestFaucet);
 
-      // Refresh balance button
+      // Withdraw button
+      $('withdraw-btn').addEventListener('click', requestWithdraw);
+
+      // Refresh on-chain balance button
       $('refresh-balance').addEventListener('click', () => {
         $('my-balance').textContent = 'Loading...';
         updateBalance();
+      });
+
+      // Refresh agent balance button
+      $('refresh-agent-balance').addEventListener('click', () => {
+        $('agent-balance').textContent = 'Loading...';
+        queryAgentBalance();
       });
     }
 
@@ -526,6 +547,9 @@
               }
 
               log(`Found agent: ${escrowAgent.name} (${escrowAgent.games} games)`);
+
+              // Query our balance from agent
+              queryAgentBalance();
             }
           } catch (e) {
             // Ignore parse errors
@@ -565,6 +589,45 @@
       });
     }
 
+    // Query agent balance
+    async function queryAgentBalance() {
+      if (!relay) return;
+
+      await publish({
+        kind: 30334,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['t', 'rps-register']],
+        content: JSON.stringify({ type: 'balance_query' })
+      });
+    }
+
+    // Withdraw from agent
+    async function requestWithdraw() {
+      if (!relay || agentBalance < 1000) {
+        log('Need at least 1000 sats to withdraw');
+        return;
+      }
+
+      const amount = agentBalance; // Withdraw all
+      $('withdraw-btn').disabled = true;
+      $('faucet-status').textContent = 'Withdrawing...';
+      log(`Requesting withdraw of ${amount} sats...`);
+
+      await publish({
+        kind: 30334,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['t', 'rps-register']],
+        content: JSON.stringify({ type: 'withdraw', amount })
+      });
+    }
+
+    // Update agent balance display
+    function updateAgentBalanceDisplay() {
+      $('agent-balance').textContent = `${agentBalance.toLocaleString()} sats`;
+      $('player-stats').textContent = `W: ${playerWins} / L: ${playerLosses}`;
+      $('withdraw-btn').disabled = agentBalance < 1000;
+    }
+
     // Handle agent responses (faucet, etc)
     function handleAgentResponse(event) {
       try {
@@ -573,17 +636,47 @@
         if (data.type === 'faucet_response') {
           if (data.success) {
             faucetReceived = true;
-            saveKeys(); // Persist faucet received state
-            $('faucet-status').textContent = `TX: ${data.txid.slice(0, 16)}...`;
+            agentBalance = 50000; // Faucet credits agent balance
+            saveKeys();
+            updateAgentBalanceDisplay();
+            $('faucet-status').textContent = `+50k sats credited!`;
             $('faucet-btn').textContent = 'Faucet Received';
             $('faucet-btn').disabled = true;
-            log(`Faucet received! TX: ${data.txid}`);
-            // Refresh balance after short delay (let mempool see it)
-            setTimeout(updateBalance, 2000);
+            log(`Faucet received! Balance: 50000 sats`);
           } else {
             $('faucet-status').textContent = `Denied: ${data.reason}`;
             $('faucet-btn').disabled = false;
             log(`Faucet denied: ${data.reason}`);
+          }
+        }
+
+        if (data.type === 'balance_response') {
+          agentBalance = data.balance || 0;
+          playerWins = data.wins || 0;
+          playerLosses = data.losses || 0;
+          updateAgentBalanceDisplay();
+          log(`Agent balance: ${agentBalance} sats (W:${playerWins} L:${playerLosses})`);
+
+          // Update faucet button based on whether we have balance
+          if (agentBalance > 0) {
+            faucetReceived = true;
+            saveKeys();
+            $('faucet-btn').textContent = 'Faucet Received';
+            $('faucet-btn').disabled = true;
+          }
+        }
+
+        if (data.type === 'withdraw_response') {
+          if (data.success) {
+            agentBalance = data.newBalance || 0;
+            updateAgentBalanceDisplay();
+            $('faucet-status').textContent = `Withdrawn! TX: ${data.txid.slice(0, 12)}...`;
+            log(`Withdraw success! TX: ${data.txid}`);
+            setTimeout(updateBalance, 3000); // Refresh on-chain balance
+          } else {
+            $('faucet-status').textContent = `Withdraw failed: ${data.reason}`;
+            $('withdraw-btn').disabled = false;
+            log(`Withdraw failed: ${data.reason}`);
           }
         }
       } catch (e) {
@@ -822,8 +915,11 @@
       showSection('result-section');
       log(`Result: ${myMove} vs ${opponentMove} - ${result}`);
 
-      // Refresh balance after a delay (let tx propagate)
-      setTimeout(updateBalance, 5000);
+      // Refresh balances after a delay
+      setTimeout(() => {
+        queryAgentBalance();
+        updateBalance();
+      }, 3000);
     }
 
     // Rematch
