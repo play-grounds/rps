@@ -160,28 +160,77 @@
 
     .agent-card {
       background: #0f3460;
-      border-radius: 0.5rem;
-      padding: 1rem;
+      border-radius: 0.75rem;
+      padding: 1.25rem;
       margin-bottom: 1rem;
+      border: 1px solid #1a4a7a;
+    }
+
+    .agent-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
     }
 
     .agent-card .name {
       font-weight: 600;
+      font-size: 1.1rem;
+      color: #fff;
+    }
+
+    .trust-badge {
+      font-size: 0.7rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 1rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .trust-new { background: #444; color: #aaa; }
+    .trust-verified { background: #2d6a4f; color: #fff; }
+    .trust-established { background: #1a759f; color: #fff; }
+    .trust-trusted { background: #7b2cbf; color: #fff; }
+
+    .agent-reputation {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .rep-stat {
+      flex: 1;
+      background: #1a1a2e;
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+      text-align: center;
+    }
+
+    .rep-stat .value {
+      font-size: 1.25rem;
+      font-weight: 700;
       color: #667eea;
     }
 
-    .agent-stats {
-      display: flex;
-      gap: 1rem;
-      margin-top: 0.5rem;
-      font-size: 0.875rem;
-      opacity: 0.8;
+    .rep-stat .label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      opacity: 0.6;
+      margin-top: 0.125rem;
     }
 
-    .agent-stats span {
+    .trust-bar {
+      height: 4px;
       background: #1a1a2e;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.25rem;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+
+    .trust-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      transition: width 0.3s;
     }
 
     .escrow-toggle {
@@ -246,12 +295,28 @@
       </div>
       <div id="agent-list">
         <div class="agent-card hidden" id="agent-info">
-          <div class="name" id="agent-name">Loading...</div>
-          <div class="agent-stats">
-            <span id="agent-games">0 games</span>
-            <span id="agent-volume">0 sats</span>
+          <div class="agent-header">
+            <div class="name" id="agent-name">Loading...</div>
+            <div class="trust-badge trust-new" id="agent-trust-badge">New</div>
           </div>
-          <div style="margin-top: 0.5rem; font-size: 0.75rem; opacity: 0.6;" id="agent-pubkey"></div>
+          <div class="trust-bar">
+            <div class="trust-bar-fill" id="agent-trust-bar" style="width: 0%"></div>
+          </div>
+          <div class="agent-reputation">
+            <div class="rep-stat">
+              <div class="value" id="agent-games">0</div>
+              <div class="label">Games</div>
+            </div>
+            <div class="rep-stat">
+              <div class="value" id="agent-volume">0</div>
+              <div class="label">Volume (k)</div>
+            </div>
+            <div class="rep-stat">
+              <div class="value" id="agent-disputes">0%</div>
+              <div class="label">Disputes</div>
+            </div>
+          </div>
+          <div style="font-size: 0.7rem; opacity: 0.5; font-family: monospace;" id="agent-pubkey"></div>
         </div>
         <div id="no-agents" style="opacity: 0.6; font-size: 0.875rem;">
           Connect to relay to find agents...
@@ -530,23 +595,35 @@
                 name: nameTag ? nameTag[1] : 'Unknown Agent',
                 games: gamesTag ? parseInt(gamesTag[1]) : 0,
                 volume: volumeTag ? parseInt(volumeTag[1]) : 0,
+                disputes: data.stats?.disputes || 0,
                 fee: data.fee || 0
               };
+
+              // Calculate trust level
+              const { trustLevel, trustPercent, trustClass } = calculateTrust(escrowAgent);
 
               // Update UI
               $('no-agents').classList.add('hidden');
               $('agent-info').classList.remove('hidden');
               $('agent-name').textContent = escrowAgent.name;
-              $('agent-games').textContent = `${escrowAgent.games} games`;
-              $('agent-volume').textContent = `${escrowAgent.volume} sats`;
-              $('agent-pubkey').textContent = escrowAgent.pubkey.slice(0, 12) + '...';
+              $('agent-games').textContent = escrowAgent.games;
+              $('agent-volume').textContent = Math.round(escrowAgent.volume / 1000);
+              $('agent-disputes').textContent = escrowAgent.games > 0
+                ? Math.round((escrowAgent.disputes / escrowAgent.games) * 100) + '%'
+                : '0%';
+              $('agent-pubkey').textContent = escrowAgent.pubkey;
+
+              // Trust badge and bar
+              $('agent-trust-badge').textContent = trustLevel;
+              $('agent-trust-badge').className = `trust-badge ${trustClass}`;
+              $('agent-trust-bar').style.width = `${trustPercent}%`;
 
               // Enable faucet button
               if (!faucetReceived) {
                 $('faucet-btn').disabled = false;
               }
 
-              log(`Found agent: ${escrowAgent.name} (${escrowAgent.games} games)`);
+              log(`Found agent: ${escrowAgent.name} (${trustLevel}, ${escrowAgent.games} games)`);
 
               // Query our balance from agent
               queryAgentBalance();
@@ -626,6 +703,40 @@
       $('agent-balance').textContent = `${agentBalance.toLocaleString()} sats`;
       $('player-stats').textContent = `W: ${playerWins} / L: ${playerLosses}`;
       $('withdraw-btn').disabled = agentBalance < 1000;
+    }
+
+    // Calculate trust level from agent stats
+    function calculateTrust(agent) {
+      const { games, volume, disputes } = agent;
+
+      // Trust score based on:
+      // - Games played (more = better)
+      // - Volume handled (more = better)
+      // - Dispute rate (lower = better)
+      const gameScore = Math.min(games / 100, 1) * 40;  // Max 40 points for 100+ games
+      const volumeScore = Math.min(volume / 1000000, 1) * 40;  // Max 40 points for 1M+ sats
+      const disputeRate = games > 0 ? disputes / games : 0;
+      const disputeScore = (1 - disputeRate) * 20;  // Max 20 points for 0% disputes
+
+      const totalScore = gameScore + volumeScore + disputeScore;
+      const trustPercent = Math.round(totalScore);
+
+      let trustLevel, trustClass;
+      if (games < 5) {
+        trustLevel = 'New';
+        trustClass = 'trust-new';
+      } else if (totalScore < 30) {
+        trustLevel = 'Verified';
+        trustClass = 'trust-verified';
+      } else if (totalScore < 60) {
+        trustLevel = 'Established';
+        trustClass = 'trust-established';
+      } else {
+        trustLevel = 'Trusted';
+        trustClass = 'trust-trusted';
+      }
+
+      return { trustLevel, trustPercent, trustClass };
     }
 
     // Handle agent responses (faucet, etc)

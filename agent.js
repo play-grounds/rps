@@ -539,13 +539,17 @@ async function startAgent() {
       ['t', 'rps-agent'],
       ['name', trail.name],
       ['games', String(trail.stats.totalGames)],
-      ['volume', String(trail.stats.totalVolume)]
+      ['volume', String(trail.stats.totalVolume)],
+      ['disputes', String(trail.stats.disputes)],
+      ['stake', String(CONFIG.stakeAmount)]
     ],
     content: JSON.stringify({
       type: 'agent_online',
       name: trail.name,
       stats: trail.stats,
-      fee: CONFIG.fee
+      stakeAmount: CONFIG.stakeAmount,
+      faucetAmount: CONFIG.faucetAmount,
+      btcAddress: keyData.btcAddress
     })
   }, secretKey);
 
